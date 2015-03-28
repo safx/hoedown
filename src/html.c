@@ -557,7 +557,7 @@ rndr_math(hoedown_buffer *ob, const hoedown_buffer *text, int displaymode, const
 }
 
 static void
-toc_header(hoedown_buffer *ob, const hoedown_buffer *content, int level, const hoedown_renderer_data *data)
+toc_header(hoedown_buffer *ob, const hoedown_buffer* content, int level, const hoedown_renderer_data *data)
 {
 	hoedown_html_renderer_state *state = data->opaque;
 
@@ -616,6 +616,18 @@ toc_finalize(hoedown_buffer *ob, int inline_render, const hoedown_renderer_data 
 	state->toc_data.header_count = 0;
 }
 
+static hoedown_object
+object_new()
+{
+	return hoedown_buffer_new(64);
+}
+
+static void
+object_finalize(hoedown_object obj)
+{
+	hoedown_buffer_free(obj);
+}
+
 hoedown_renderer *
 hoedown_html_toc_renderer_new(int nesting_level)
 {
@@ -659,7 +671,12 @@ hoedown_html_toc_renderer_new(int nesting_level)
 		rndr_normal_text,
 
 		NULL,
-		toc_finalize
+		toc_finalize,
+
+		object_new,
+		object_new,
+		object_finalize,
+		object_finalize
 	};
 
 	hoedown_html_renderer_state *state;
@@ -722,7 +739,12 @@ hoedown_html_renderer_new(hoedown_html_flags render_flags, int nesting_level)
 		rndr_normal_text,
 
 		NULL,
-		NULL
+		NULL,
+
+		object_new,
+		object_new,
+		object_finalize,
+		object_finalize
 	};
 
 	hoedown_html_renderer_state *state;

@@ -64,21 +64,21 @@ struct footnote_list {
 /*   data is the pointer of the beginning of the span */
 /*   offset is the number of valid chars before data */
 typedef size_t
-(*char_trigger)(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+(*char_trigger)(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
 
-static size_t char_emphasis(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_quote(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_linebreak(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_codespan(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_escape(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_entity(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_langle_tag(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_autolink_url(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_autolink_email(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_autolink_www(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_superscript(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
-static size_t char_math(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_emphasis(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_quote(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_linebreak(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_codespan(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_escape(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_entity(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_langle_tag(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_autolink_url(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_autolink_email(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_autolink_www(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_link(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_superscript(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
+static size_t char_math(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size);
 
 enum markdown_char_t {
 	MD_CHAR_NONE = 0,
@@ -122,7 +122,6 @@ struct hoedown_document {
 	struct footnote_list footnotes_found;
 	struct footnote_list footnotes_used;
 	uint8_t active_char[256];
-	hoedown_stack work_bufs[2];
 	hoedown_extensions ext_flags;
 	size_t max_nesting;
 	int in_link_body;
@@ -131,31 +130,6 @@ struct hoedown_document {
 /***************************
  * HELPER FUNCTIONS *
  ***************************/
-
-static hoedown_buffer *
-newbuf(hoedown_document *doc, int type)
-{
-	static const size_t buf_size[2] = {256, 64};
-	hoedown_buffer *work = NULL;
-	hoedown_stack *pool = &doc->work_bufs[type];
-
-	if (pool->size < pool->asize &&
-		pool->item[pool->size] != NULL) {
-		work = pool->item[pool->size++];
-		work->size = 0;
-	} else {
-		work = hoedown_buffer_new(buf_size[type]);
-		hoedown_stack_push(pool, work);
-	}
-
-	return work;
-}
-
-static void
-popbuf(hoedown_document *doc, int type)
-{
-	doc->work_bufs[type].size--;
-}
 
 static void
 unscape_text(hoedown_buffer *ob, hoedown_buffer *src)
@@ -457,15 +431,11 @@ tag_length(uint8_t *data, size_t size, hoedown_autolink_type *autolink)
 
 /* parse_inline • parses inline markdown elements */
 static void
-parse_inline(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_inline(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	size_t i = 0, end = 0;
 	hoedown_buffer work = { 0, 0, 0, 0, NULL, NULL, NULL };
 	uint8_t *active_char = doc->active_char;
-
-	if (doc->work_bufs[BUFFER_SPAN].size +
-		doc->work_bufs[BUFFER_BLOCK].size > doc->max_nesting)
-		return;
 
 	while (i < size) {
 		/* copying inactive chars into the output */
@@ -477,8 +447,9 @@ parse_inline(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t si
 			work.size = end - i;
 			doc->md.normal_text(ob, &work, &doc->data);
 		}
-		else
-			hoedown_buffer_put(ob, data + i, end - i);
+		/* TODO */
+		/*else
+          hoedown_buffer_put(ob, data + i, end - i);*/
 
 		if (end >= size) break;
 		i = end;
@@ -601,10 +572,10 @@ find_emph_char(uint8_t *data, size_t size, uint8_t c)
 /* parse_emph1 • parsing single emphase */
 /* closed by a symbol not preceded by spacing and not followed by symbol */
 static size_t
-parse_emph1(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, uint8_t c)
+parse_emph1(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, uint8_t c)
 {
 	size_t i = 0, len;
-	hoedown_buffer *work = 0;
+	hoedown_object work = 0;
 	int r;
 
 	/* skipping one symbol if coming from emph3 */
@@ -623,7 +594,7 @@ parse_emph1(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 					continue;
 			}
 
-			work = newbuf(doc, BUFFER_SPAN);
+			work = doc->md.span_new(HOEDOWN_NODE_EMPH1, &doc->data);
 			parse_inline(work, doc, data, i);
 
 			if (doc->ext_flags & HOEDOWN_EXT_UNDERLINE && c == '_')
@@ -631,7 +602,7 @@ parse_emph1(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 			else
 				r = doc->md.emphasis(ob, work, &doc->data);
 
-			popbuf(doc, BUFFER_SPAN);
+			doc->md.span_free(work, HOEDOWN_NODE_EMPH1, &doc->data);
 			return r ? i + 1 : 0;
 		}
 	}
@@ -641,10 +612,10 @@ parse_emph1(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 
 /* parse_emph2 • parsing single emphase */
 static size_t
-parse_emph2(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, uint8_t c)
+parse_emph2(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, uint8_t c)
 {
 	size_t i = 0, len;
-	hoedown_buffer *work = 0;
+	hoedown_object work = 0;
 	int r;
 
 	while (i < size) {
@@ -653,7 +624,7 @@ parse_emph2(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 		i += len;
 
 		if (i + 1 < size && data[i] == c && data[i + 1] == c && i && !_isspace(data[i - 1])) {
-			work = newbuf(doc, BUFFER_SPAN);
+			work = doc->md.span_new(HOEDOWN_NODE_EMPH2, &doc->data);
 			parse_inline(work, doc, data, i);
 
 			if (c == '~')
@@ -663,7 +634,7 @@ parse_emph2(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 			else
 				r = doc->md.double_emphasis(ob, work, &doc->data);
 
-			popbuf(doc, BUFFER_SPAN);
+			doc->md.span_free(work, HOEDOWN_NODE_EMPH2, &doc->data);
 			return r ? i + 2 : 0;
 		}
 		i++;
@@ -674,7 +645,7 @@ parse_emph2(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 /* parse_emph3 • parsing single emphase */
 /* finds the first closing tag, and delegates to the other emph */
 static size_t
-parse_emph3(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, uint8_t c)
+parse_emph3(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, uint8_t c)
 {
 	size_t i = 0, len;
 	int r;
@@ -690,11 +661,11 @@ parse_emph3(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 
 		if (i + 2 < size && data[i + 1] == c && data[i + 2] == c && doc->md.triple_emphasis) {
 			/* triple symbol found */
-			hoedown_buffer *work = newbuf(doc, BUFFER_SPAN);
+			hoedown_object work = doc->md.span_new(HOEDOWN_NODE_EMPH3, &doc->data);
 
 			parse_inline(work, doc, data, i);
 			r = doc->md.triple_emphasis(ob, work, &doc->data);
-			popbuf(doc, BUFFER_SPAN);
+			doc->md.span_free(work, HOEDOWN_NODE_EMPH3, &doc->data);
 			return r ? i + 3 : 0;
 
 		} else if (i + 1 < size && data[i + 1] == c) {
@@ -715,7 +686,7 @@ parse_emph3(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t siz
 
 /* parse_math • parses a math span until the given ending delimiter */
 static size_t
-parse_math(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size, const char *end, size_t delimsz, int displaymode)
+parse_math(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size, const char *end, size_t delimsz, int displaymode)
 {
 	hoedown_buffer text = { NULL, 0, 0, 0, NULL, NULL, NULL };
 	size_t i = delimsz;
@@ -757,7 +728,7 @@ parse_math(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offs
 
 /* char_emphasis • single and double emphasis parsing */
 static size_t
-char_emphasis(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_emphasis(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	uint8_t c = data[0];
 	size_t ret;
@@ -796,14 +767,15 @@ char_emphasis(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t o
 
 /* char_linebreak • '\n' preceded by two spaces (assuming linebreak != 0) */
 static size_t
-char_linebreak(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_linebreak(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	if (offset < 2 || data[-1] != ' ' || data[-2] != ' ')
 		return 0;
 
 	/* removing the last space from ob and rendering */
-	while (ob->size && ob->data[ob->size - 1] == ' ')
-		ob->size--;
+	/* TODO */
+	/*while (ob->size && ob->data[ob->size - 1] == ' ')
+        ob->size--;*/
 
 	return doc->md.linebreak(ob, &doc->data) ? 1 : 0;
 }
@@ -811,7 +783,7 @@ char_linebreak(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t 
 
 /* char_codespan • '`' parsing a code span (assuming codespan != 0) */
 static size_t
-char_codespan(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_codespan(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	hoedown_buffer work = { NULL, 0, 0, 0, NULL, NULL, NULL };
 	size_t end, nb = 0, i, f_begin, f_end;
@@ -856,7 +828,7 @@ char_codespan(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t o
 
 /* char_quote • '"' parsing a quote */
 static size_t
-char_quote(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_quote(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	size_t end, nq = 0, i, f_begin, f_end;
 
@@ -886,12 +858,12 @@ char_quote(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offs
 
 	/* real quote */
 	if (f_begin < f_end) {
-		hoedown_buffer *work = newbuf(doc, BUFFER_SPAN);
+		hoedown_object *work = doc->md.span_new(HOEDOWN_NODE_QUOTE, &doc->data);
 		parse_inline(work, doc, data + f_begin, f_end - f_begin);
 
 		if (!doc->md.quote(ob, work, &doc->data))
 			end = 0;
-		popbuf(doc, BUFFER_SPAN);
+		doc->md.span_free(work, HOEDOWN_NODE_QUOTE, &doc->data);
 	} else {
 		if (!doc->md.quote(ob, 0, &doc->data))
 			end = 0;
@@ -903,7 +875,7 @@ char_quote(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offs
 
 /* char_escape • '\\' backslash escape */
 static size_t
-char_escape(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_escape(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	static const char *escape_chars = "\\`*_{}[]()#+-.!:|&<>^~=\"$";
 	hoedown_buffer work = { 0, 0, 0, 0, NULL, NULL, NULL };
@@ -936,7 +908,7 @@ char_escape(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t off
 /* char_entity • '&' escaped when it doesn't belong to an entity */
 /* valid entities are assumed to be anything matching &#?[A-Za-z0-9]+; */
 static size_t
-char_entity(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_entity(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	size_t end = 1;
 	hoedown_buffer work = { 0, 0, 0, 0, NULL, NULL, NULL };
@@ -964,7 +936,7 @@ char_entity(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t off
 
 /* char_langle_tag • '<' when tags or autolinks are allowed */
 static size_t
-char_langle_tag(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_langle_tag(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	hoedown_buffer work = { NULL, 0, 0, 0, NULL, NULL, NULL };
 	hoedown_autolink_type altype = HOEDOWN_AUTOLINK_NONE;
@@ -976,12 +948,12 @@ char_langle_tag(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 
 	if (end > 2) {
 		if (doc->md.autolink && altype != HOEDOWN_AUTOLINK_NONE) {
-			hoedown_buffer *u_link = newbuf(doc, BUFFER_SPAN);
+			hoedown_buffer *u_link = hoedown_buffer_new(64);
 			work.data = data + 1;
 			work.size = end - 2;
 			unscape_text(u_link, &work);
 			ret = doc->md.autolink(ob, u_link, altype, &doc->data);
-			popbuf(doc, BUFFER_SPAN);
+			hoedown_buffer_free(u_link);
 		}
 		else if (doc->md.raw_html)
 			ret = doc->md.raw_html(ob, &work, &doc->data);
@@ -992,7 +964,7 @@ char_langle_tag(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 }
 
 static size_t
-char_autolink_www(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_autolink_www(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	hoedown_buffer *link, *link_url, *link_text;
 	size_t link_len, rewind;
@@ -1000,31 +972,32 @@ char_autolink_www(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size
 	if (!doc->md.link || doc->in_link_body)
 		return 0;
 
-	link = newbuf(doc, BUFFER_SPAN);
+	link = hoedown_buffer_new(64);
 
 	if ((link_len = hoedown_autolink__www(&rewind, link, data, offset, size, HOEDOWN_AUTOLINK_SHORT_DOMAINS)) > 0) {
-		link_url = newbuf(doc, BUFFER_SPAN);
+		link_url = hoedown_buffer_new(64);
 		HOEDOWN_BUFPUTSL(link_url, "http://");
 		hoedown_buffer_put(link_url, link->data, link->size);
 
-		ob->size -= rewind;
+		/* TODO */
+		/* ob->size -= rewind; */
 		if (doc->md.normal_text) {
-			link_text = newbuf(doc, BUFFER_SPAN);
+			link_text = hoedown_buffer_new(64);
 			doc->md.normal_text(link_text, link, &doc->data);
 			doc->md.link(ob, link_text, link_url, NULL, &doc->data);
-			popbuf(doc, BUFFER_SPAN);
+			hoedown_buffer_free(link_text);
 		} else {
 			doc->md.link(ob, link, link_url, NULL, &doc->data);
 		}
-		popbuf(doc, BUFFER_SPAN);
+		hoedown_buffer_free(link_url);
 	}
 
-	popbuf(doc, BUFFER_SPAN);
+	hoedown_buffer_free(link);
 	return link_len;
 }
 
 static size_t
-char_autolink_email(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_autolink_email(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	hoedown_buffer *link;
 	size_t link_len, rewind;
@@ -1032,19 +1005,20 @@ char_autolink_email(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, si
 	if (!doc->md.autolink || doc->in_link_body)
 		return 0;
 
-	link = newbuf(doc, BUFFER_SPAN);
+	link = hoedown_buffer_new(64);
 
 	if ((link_len = hoedown_autolink__email(&rewind, link, data, offset, size, 0)) > 0) {
-		ob->size -= rewind;
+	/* TODO */
+	/* 	ob->size -= rewind; */
 		doc->md.autolink(ob, link, HOEDOWN_AUTOLINK_EMAIL, &doc->data);
 	}
 
-	popbuf(doc, BUFFER_SPAN);
+	hoedown_buffer_free(link);
 	return link_len;
 }
 
 static size_t
-char_autolink_url(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_autolink_url(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	hoedown_buffer *link;
 	size_t link_len, rewind;
@@ -1052,29 +1026,32 @@ char_autolink_url(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size
 	if (!doc->md.autolink || doc->in_link_body)
 		return 0;
 
-	link = newbuf(doc, BUFFER_SPAN);
+	link = hoedown_buffer_new(64);
 
 	if ((link_len = hoedown_autolink__url(&rewind, link, data, offset, size, 0)) > 0) {
-		ob->size -= rewind;
+	/* TODO */
+	/* 	ob->size -= rewind; */
 		doc->md.autolink(ob, link, HOEDOWN_AUTOLINK_NORMAL, &doc->data);
-	}
+	 }
 
-	popbuf(doc, BUFFER_SPAN);
+	hoedown_buffer_free(link);
 	return link_len;
 }
 
 /* char_link • '[': parsing a link, a footnote or an image */
 static size_t
-char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_link(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	int is_img = (offset && data[-1] == '!' && !is_escaped(data - offset, offset - 1));
 	int is_footnote = (doc->ext_flags & HOEDOWN_EXT_FOOTNOTES && data[1] == '^');
 	size_t i = 1, txt_e, link_b = 0, link_e = 0, title_b = 0, title_e = 0;
-	hoedown_buffer *content = NULL;
+	hoedown_object content = NULL;
 	hoedown_buffer *link = NULL;
 	hoedown_buffer *title = NULL;
 	hoedown_buffer *u_link = NULL;
-	size_t org_work_size = doc->work_bufs[BUFFER_SPAN].size;
+	hoedown_buffer *id = NULL;
+	int free_link = 0;
+	int free_title = 0;
 	int ret = 0, in_title = 0, qtype = 0;
 
 	/* checking whether the correct renderer exists */
@@ -1191,12 +1168,14 @@ char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offse
 
 		/* building escaped link and title */
 		if (link_e > link_b) {
-			link = newbuf(doc, BUFFER_SPAN);
+			free_link = 1;
+			link = hoedown_buffer_new(64);
 			hoedown_buffer_put(link, data + link_b, link_e - link_b);
 		}
 
 		if (title_e > title_b) {
-			title = newbuf(doc, BUFFER_SPAN);
+			free_title = 1;
+			title = hoedown_buffer_new(64);
 			hoedown_buffer_put(title, data + title_b, title_e - title_b);
 		}
 
@@ -1205,8 +1184,8 @@ char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offse
 
 	/* reference style link */
 	else if (i < size && data[i] == '[') {
-		hoedown_buffer *id = newbuf(doc, BUFFER_SPAN);
 		struct link_ref *lr;
+		id = hoedown_buffer_new(64);
 
 		/* looking for the id */
 		i++;
@@ -1233,8 +1212,8 @@ char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offse
 
 	/* shortcut reference style link */
 	else {
-		hoedown_buffer *id = newbuf(doc, BUFFER_SPAN);
 		struct link_ref *lr;
+		id = hoedown_buffer_new(64);
 
 		/* crafting the id */
 		replace_spacing(id, data + 1, txt_e - 1);
@@ -1254,9 +1233,10 @@ char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offse
 
 	/* building content: img alt is kept, only link content is parsed */
 	if (txt_e > 1) {
-		content = newbuf(doc, BUFFER_SPAN);
+		content = doc->md.span_new(HOEDOWN_NODE_LINK, &doc->data);
 		if (is_img) {
-			hoedown_buffer_put(content, data + 1, txt_e - 1);
+			/* TODO */
+			/*hoedown_buffer_put(content, data + 1, txt_e - 1);*/
 		} else {
 			/* disable autolinking when parsing inline the
 			 * content of a link */
@@ -1267,14 +1247,15 @@ char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offse
 	}
 
 	if (link) {
-		u_link = newbuf(doc, BUFFER_SPAN);
+		u_link = hoedown_buffer_new(64);
 		unscape_text(u_link, link);
 	}
 
 	/* calling the relevant rendering function */
 	if (is_img) {
-		if (ob->size && ob->data[ob->size - 1] == '!')
-			ob->size -= 1;
+		/* TODO */
+		/* if (ob->size && ob->data[ob->size - 1] == '!') */
+		/* 	ob->size -= 1; */
 
 		ret = doc->md.image(ob, u_link, title, content, &doc->data);
 	} else {
@@ -1283,12 +1264,17 @@ char_link(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offse
 
 	/* cleanup */
 cleanup:
-	doc->work_bufs[BUFFER_SPAN].size = (int)org_work_size;
+	if (content) doc->md.span_free(content, HOEDOWN_NODE_LINK, &doc->data);
+	if (free_link) hoedown_buffer_free(link);
+	if (free_title) hoedown_buffer_free(title);
+	if (u_link) hoedown_buffer_free(u_link);
+	if (id) hoedown_buffer_free(id);
+
 	return ret ? i : 0;
 }
 
 static size_t
-char_superscript(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_superscript(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	size_t sup_start, sup_len;
 	hoedown_buffer *sup;
@@ -1315,16 +1301,16 @@ char_superscript(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_
 	if (sup_len - sup_start == 0)
 		return (sup_start == 2) ? 3 : 0;
 
-	sup = newbuf(doc, BUFFER_SPAN);
+	sup = doc->md.span_new(HOEDOWN_NODE_SUPERSCRIPT, &doc->data);
 	parse_inline(sup, doc, data + sup_start, sup_len - sup_start);
 	doc->md.superscript(ob, sup, &doc->data);
-	popbuf(doc, BUFFER_SPAN);
+	doc->md.span_free(sup, HOEDOWN_NODE_SUPERSCRIPT, &doc->data);
 
 	return (sup_start == 2) ? sup_len + 1 : sup_len;
 }
 
 static size_t
-char_math(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
+char_math(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t offset, size_t size)
 {
 	/* double dollar */
 	if (size > 1 && data[1] == '$')
@@ -1580,19 +1566,19 @@ prefix_uli(uint8_t *data, size_t size)
 
 
 /* parse_block • parsing of one block, returning next uint8_t to parse */
-static void parse_block(hoedown_buffer *ob, hoedown_document *doc,
+static void parse_block(hoedown_object ob, hoedown_document *doc,
 			uint8_t *data, size_t size);
 
 
 /* parse_blockquote • handles parsing of a blockquote fragment */
 static size_t
-parse_blockquote(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_blockquote(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	size_t beg, end = 0, pre, work_size = 0;
 	uint8_t *work_data = 0;
-	hoedown_buffer *out = 0;
+	hoedown_object out = 0;
 
-	out = newbuf(doc, BUFFER_BLOCK);
+	out = doc->md.block_new(HOEDOWN_NODE_BLOCKQUOTE, &doc->data);
 	beg = 0;
 	while (beg < size) {
 		for (end = beg + 1; end < size && data[end - 1] != '\n'; end++);
@@ -1622,16 +1608,16 @@ parse_blockquote(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_
 	parse_block(out, doc, work_data, work_size);
 	if (doc->md.blockquote)
 		doc->md.blockquote(ob, out, &doc->data);
-	popbuf(doc, BUFFER_BLOCK);
+	doc->md.block_free(out, HOEDOWN_NODE_BLOCKQUOTE, &doc->data);
 	return end;
 }
 
 static size_t
-parse_htmlblock(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, int do_render);
+parse_htmlblock(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, int do_render);
 
 /* parse_blockquote • handles parsing of a regular paragraph */
 static size_t
-parse_paragraph(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_paragraph(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	hoedown_buffer work = { NULL, 0, 0, 0, NULL, NULL, NULL };
 	size_t i = 0, end = 0;
@@ -1663,13 +1649,13 @@ parse_paragraph(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 		work.size--;
 
 	if (!level) {
-		hoedown_buffer *tmp = newbuf(doc, BUFFER_BLOCK);
+		hoedown_object tmp = doc->md.block_new(HOEDOWN_NODE_PARAGRAPH, &doc->data);
 		parse_inline(tmp, doc, work.data, work.size);
 		if (doc->md.paragraph)
 			doc->md.paragraph(ob, tmp, &doc->data);
-		popbuf(doc, BUFFER_BLOCK);
+		doc->md.block_free(tmp, HOEDOWN_NODE_PARAGRAPH, &doc->data);
 	} else {
-		hoedown_buffer *header_work;
+		hoedown_object header_work;
 
 		if (work.size) {
 			size_t beg;
@@ -1684,26 +1670,26 @@ parse_paragraph(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 				work.size -= 1;
 
 			if (work.size > 0) {
-				hoedown_buffer *tmp = newbuf(doc, BUFFER_BLOCK);
+				hoedown_buffer *tmp = doc->md.block_new(HOEDOWN_NODE_PARAGRAPH, &doc->data);
 				parse_inline(tmp, doc, work.data, work.size);
 
 				if (doc->md.paragraph)
 					doc->md.paragraph(ob, tmp, &doc->data);
 
-				popbuf(doc, BUFFER_BLOCK);
+				doc->md.block_free(tmp, HOEDOWN_NODE_PARAGRAPH, &doc->data);
 				work.data += beg;
 				work.size = i - beg;
 			}
 			else work.size = i;
 		}
 
-		header_work = newbuf(doc, BUFFER_SPAN);
+		header_work = doc->md.span_new(HOEDOWN_NODE_HEADER, &doc->data);
 		parse_inline(header_work, doc, work.data, work.size);
 
 		if (doc->md.header)
 			doc->md.header(ob, header_work, (int)level, &doc->data);
 
-		popbuf(doc, BUFFER_SPAN);
+		doc->md.span_free(header_work, HOEDOWN_NODE_HEADER, &doc->data);
 	}
 
 	return end;
@@ -1711,7 +1697,7 @@ parse_paragraph(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 
 /* parse_fencedcode • handles parsing of a block-level code fragment */
 static size_t
-parse_fencedcode(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_fencedcode(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	hoedown_buffer text = { 0, 0, 0, 0, NULL, NULL, NULL };
 	hoedown_buffer lang = { 0, 0, 0, 0, NULL, NULL, NULL };
@@ -1753,12 +1739,12 @@ parse_fencedcode(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_
 }
 
 static size_t
-parse_blockcode(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_blockcode(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	size_t beg, end, pre;
 	hoedown_buffer *work = 0;
 
-	work = newbuf(doc, BUFFER_BLOCK);
+	work = hoedown_buffer_new(256);
 
 	beg = 0;
 	while (beg < size) {
@@ -1789,16 +1775,17 @@ parse_blockcode(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 	if (doc->md.blockcode)
 		doc->md.blockcode(ob, work, NULL, &doc->data);
 
-	popbuf(doc, BUFFER_BLOCK);
+	hoedown_buffer_free(work);
 	return beg;
 }
 
 /* parse_listitem • parsing of a single list item */
 /*	assuming initial prefix is already removed */
 static size_t
-parse_listitem(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, hoedown_list_flags *flags)
+parse_listitem(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, hoedown_list_flags *flags)
 {
-	hoedown_buffer *work = 0, *inter = 0;
+	hoedown_buffer *work = 0;
+	hoedown_object inter = 0;
 	size_t beg = 0, end, pre, sublist = 0, orgpre = 0, i;
 	int in_empty = 0, has_inside_empty = 0, in_fence = 0;
 
@@ -1819,8 +1806,8 @@ parse_listitem(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t 
 		end++;
 
 	/* getting working buffers */
-	work = newbuf(doc, BUFFER_SPAN);
-	inter = newbuf(doc, BUFFER_SPAN);
+	work = hoedown_buffer_new(64);
+	inter = doc->md.span_new(HOEDOWN_NODE_LISTITEM, &doc->data);
 
 	/* putting the first line into the working buffer */
 	hoedown_buffer_put(work, data + beg, end - beg);
@@ -1925,20 +1912,20 @@ parse_listitem(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t 
 	if (doc->md.listitem)
 		doc->md.listitem(ob, inter, *flags, &doc->data);
 
-	popbuf(doc, BUFFER_SPAN);
-	popbuf(doc, BUFFER_SPAN);
+	hoedown_buffer_free(work);
+	doc->md.span_free(inter, HOEDOWN_NODE_LISTITEM, &doc->data);
 	return beg;
 }
 
 
 /* parse_list • parsing ordered or unordered list block */
 static size_t
-parse_list(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, hoedown_list_flags flags)
+parse_list(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, hoedown_list_flags flags)
 {
-	hoedown_buffer *work = 0;
+	hoedown_object work = 0;
 	size_t i = 0, j;
 
-	work = newbuf(doc, BUFFER_BLOCK);
+	work = doc->md.block_new(HOEDOWN_NODE_LIST, &doc->data);
 
 	while (i < size) {
 		j = parse_listitem(work, doc, data + i, size - i, &flags);
@@ -1950,13 +1937,13 @@ parse_list(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size
 
 	if (doc->md.list)
 		doc->md.list(ob, work, flags, &doc->data);
-	popbuf(doc, BUFFER_BLOCK);
+	doc->md.block_free(work, HOEDOWN_NODE_LIST, &doc->data);
 	return i;
 }
 
 /* parse_atxheader • parsing of atx-style headers */
 static size_t
-parse_atxheader(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_atxheader(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	size_t level = 0;
 	size_t i, end, skip;
@@ -1976,14 +1963,14 @@ parse_atxheader(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 		end--;
 
 	if (end > i) {
-		hoedown_buffer *work = newbuf(doc, BUFFER_SPAN);
+		hoedown_object work = doc->md.span_new(HOEDOWN_NODE_ATXHEADER, &doc->data);
 
 		parse_inline(work, doc, data + i, end - i);
 
 		if (doc->md.header)
 			doc->md.header(ob, work, (int)level, &doc->data);
 
-		popbuf(doc, BUFFER_SPAN);
+		doc->md.span_free(work, HOEDOWN_NODE_ATXHEADER, &doc->data);
 	}
 
 	return skip;
@@ -1991,21 +1978,21 @@ parse_atxheader(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 
 /* parse_footnote_def • parse a single footnote definition */
 static void
-parse_footnote_def(hoedown_buffer *ob, hoedown_document *doc, unsigned int num, uint8_t *data, size_t size)
+parse_footnote_def(hoedown_object ob, hoedown_document *doc, unsigned int num, uint8_t *data, size_t size)
 {
 	hoedown_buffer *work = 0;
-	work = newbuf(doc, BUFFER_SPAN);
+	work = doc->md.span_new(HOEDOWN_NODE_FOOTNOTE_DEF, &doc->data);
 
 	parse_block(work, doc, data, size);
 
 	if (doc->md.footnote_def)
 	doc->md.footnote_def(ob, work, num, &doc->data);
-	popbuf(doc, BUFFER_SPAN);
+	doc->md.span_free(work, HOEDOWN_NODE_FOOTNOTE_DEF, &doc->data);
 }
 
 /* parse_footnote_list • render the contents of the footnotes */
 static void
-parse_footnote_list(hoedown_buffer *ob, hoedown_document *doc, struct footnote_list *footnotes)
+parse_footnote_list(hoedown_object ob, hoedown_document *doc, struct footnote_list *footnotes)
 {
 	hoedown_buffer *work = 0;
 	struct footnote_item *item;
@@ -2014,7 +2001,7 @@ parse_footnote_list(hoedown_buffer *ob, hoedown_document *doc, struct footnote_l
 	if (footnotes->count == 0)
 		return;
 
-	work = newbuf(doc, BUFFER_BLOCK);
+	work = doc->md.block_new(HOEDOWN_NODE_FOOTNOTE_LIST, &doc->data);
 
 	item = footnotes->head;
 	while (item) {
@@ -2025,7 +2012,7 @@ parse_footnote_list(hoedown_buffer *ob, hoedown_document *doc, struct footnote_l
 
 	if (doc->md.footnotes)
 		doc->md.footnotes(ob, work, &doc->data);
-	popbuf(doc, BUFFER_BLOCK);
+	doc->md.block_free(work, HOEDOWN_NODE_FOOTNOTE_LIST, &doc->data);
 }
 
 /* htmlblock_is_end • check for end of HTML block : </tag>( *)\n */
@@ -2107,7 +2094,7 @@ htmlblock_find_end_strict(
 
 /* parse_htmlblock • parsing of inline HTML block */
 static size_t
-parse_htmlblock(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size, int do_render)
+parse_htmlblock(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size, int do_render)
 {
 	hoedown_buffer work = { NULL, 0, 0, 0, NULL, NULL, NULL };
 	size_t i, j = 0, tag_len, tag_end;
@@ -2193,7 +2180,7 @@ parse_htmlblock(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t
 
 static void
 parse_table_row(
-	hoedown_buffer *ob,
+	hoedown_object ob,
 	hoedown_document *doc,
 	uint8_t *data,
 	size_t size,
@@ -2202,21 +2189,19 @@ parse_table_row(
 	hoedown_table_flags header_flag)
 {
 	size_t i = 0, col, len;
-	hoedown_buffer *row_work = 0;
+	hoedown_object row_work = 0;
 
 	if (!doc->md.table_cell || !doc->md.table_row)
 		return;
 
-	row_work = newbuf(doc, BUFFER_SPAN);
+	row_work = doc->md.span_new(HOEDOWN_NODE_TABLE_ROW, &doc->data);
 
 	if (i < size && data[i] == '|')
 		i++;
 
 	for (col = 0; col < columns && i < size; ++col) {
 		size_t cell_start, cell_end;
-		hoedown_buffer *cell_work;
-
-		cell_work = newbuf(doc, BUFFER_SPAN);
+		hoedown_buffer *cell_work = doc->md.span_new(HOEDOWN_NODE_TABLE_CELL, &doc->data);
 
 		while (i < size && _isspace(data[i]))
 			i++;
@@ -2234,23 +2219,24 @@ parse_table_row(
 		parse_inline(cell_work, doc, data + cell_start, 1 + cell_end - cell_start);
 		doc->md.table_cell(row_work, cell_work, col_data[col] | header_flag, &doc->data);
 
-		popbuf(doc, BUFFER_SPAN);
+		doc->md.span_free(cell_work, HOEDOWN_NODE_TABLE_CELL, &doc->data);
 		i++;
 	}
 
 	for (; col < columns; ++col) {
-		hoedown_buffer empty_cell = { 0, 0, 0, 0, NULL, NULL, NULL };
+		hoedown_object empty_cell = doc->md.span_new(HOEDOWN_NODE_TABLE_CELL, &doc->data);
 		doc->md.table_cell(row_work, &empty_cell, col_data[col] | header_flag, &doc->data);
+        doc->md.span_free(empty_cell, HOEDOWN_NODE_TABLE_CELL, &doc->data);
 	}
 
 	doc->md.table_row(ob, row_work, &doc->data);
 
-	popbuf(doc, BUFFER_SPAN);
+	doc->md.span_free(row_work, HOEDOWN_NODE_TABLE_ROW, &doc->data);
 }
 
 static size_t
 parse_table_header(
-	hoedown_buffer *ob,
+	hoedown_object ob,
 	hoedown_document *doc,
 	uint8_t *data,
 	size_t size,
@@ -2342,23 +2328,19 @@ parse_table_header(
 
 static size_t
 parse_table(
-	hoedown_buffer *ob,
+	hoedown_object ob,
 	hoedown_document *doc,
 	uint8_t *data,
 	size_t size)
 {
 	size_t i;
 
-	hoedown_buffer *work = 0;
-	hoedown_buffer *header_work = 0;
-	hoedown_buffer *body_work = 0;
+	hoedown_object work = doc->md.block_new(HOEDOWN_NODE_TABLE, &doc->data);
+	hoedown_object header_work = doc->md.span_new(HOEDOWN_NODE_TABLE_HEADER, &doc->data);
+	hoedown_object body_work = doc->md.block_new(HOEDOWN_NODE_TABLE_BODY, &doc->data);
 
 	size_t columns;
 	hoedown_table_flags *col_data = NULL;
-
-	work = newbuf(doc, BUFFER_BLOCK);
-	header_work = newbuf(doc, BUFFER_SPAN);
-	body_work = newbuf(doc, BUFFER_BLOCK);
 
 	i = parse_table_header(header_work, doc, data, size, &columns, &col_data);
 	if (i > 0) {
@@ -2401,23 +2383,19 @@ parse_table(
 	}
 
 	free(col_data);
-	popbuf(doc, BUFFER_SPAN);
-	popbuf(doc, BUFFER_BLOCK);
-	popbuf(doc, BUFFER_BLOCK);
+	doc->md.block_free(work, HOEDOWN_NODE_TABLE, &doc->data);
+	doc->md.span_free(header_work, HOEDOWN_NODE_TABLE_HEADER, &doc->data);
+	doc->md.block_free(body_work, HOEDOWN_NODE_TABLE_BODY, &doc->data);
 	return i;
 }
 
 /* parse_block • parsing of one block, returning next uint8_t to parse */
 static void
-parse_block(hoedown_buffer *ob, hoedown_document *doc, uint8_t *data, size_t size)
+parse_block(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size)
 {
 	size_t beg, end, i;
 	uint8_t *txt_data;
 	beg = 0;
-
-	if (doc->work_bufs[BUFFER_SPAN].size +
-		doc->work_bufs[BUFFER_BLOCK].size > doc->max_nesting)
-		return;
 
 	while (beg < size) {
 		txt_data = data + beg;
@@ -2746,9 +2724,6 @@ hoedown_document_new(
 
 	doc->data.opaque = renderer->opaque;
 
-	hoedown_stack_init(&doc->work_bufs[BUFFER_BLOCK], 4);
-	hoedown_stack_init(&doc->work_bufs[BUFFER_SPAN], 8);
-
 	memset(doc->active_char, 0x0, 256);
 
 	if (extensions & HOEDOWN_EXT_UNDERLINE && doc->md.underline) {
@@ -2801,7 +2776,7 @@ hoedown_document_new(
 }
 
 void
-hoedown_document_render(hoedown_document *doc, hoedown_buffer *ob, const uint8_t *data, size_t size)
+hoedown_document_render(hoedown_document *doc, hoedown_object ob, const uint8_t *data, size_t size)
 {
 	static const uint8_t UTF8_BOM[] = {0xEF, 0xBB, 0xBF};
 
@@ -2858,9 +2833,6 @@ hoedown_document_render(hoedown_document *doc, hoedown_buffer *ob, const uint8_t
 			beg = end;
 		}
 
-	/* pre-grow the output buffer to minimize allocations */
-	hoedown_buffer_grow(ob, text->size + (text->size >> 1));
-
 	/* second pass: actual rendering */
 	if (doc->md.doc_header)
 		doc->md.doc_header(ob, 0, &doc->data);
@@ -2887,13 +2859,10 @@ hoedown_document_render(hoedown_document *doc, hoedown_buffer *ob, const uint8_t
 		free_footnote_list(&doc->footnotes_found, 1);
 		free_footnote_list(&doc->footnotes_used, 0);
 	}
-
-	assert(doc->work_bufs[BUFFER_SPAN].size == 0);
-	assert(doc->work_bufs[BUFFER_BLOCK].size == 0);
 }
 
 void
-hoedown_document_render_inline(hoedown_document *doc, hoedown_buffer *ob, const uint8_t *data, size_t size)
+hoedown_document_render_inline(hoedown_document *doc, hoedown_object ob, const uint8_t *data, size_t size)
 {
 	size_t i = 0, mark;
 	hoedown_buffer *text = hoedown_buffer_new(64);
@@ -2921,9 +2890,6 @@ hoedown_document_render_inline(hoedown_document *doc, hoedown_buffer *ob, const 
 		}
 	}
 
-	/* second pass: actual rendering */
-	hoedown_buffer_grow(ob, text->size + (text->size >> 1));
-
 	if (doc->md.doc_header)
 		doc->md.doc_header(ob, 1, &doc->data);
 
@@ -2934,24 +2900,10 @@ hoedown_document_render_inline(hoedown_document *doc, hoedown_buffer *ob, const 
 
 	/* clean-up */
 	hoedown_buffer_free(text);
-
-	assert(doc->work_bufs[BUFFER_SPAN].size == 0);
-	assert(doc->work_bufs[BUFFER_BLOCK].size == 0);
 }
 
 void
 hoedown_document_free(hoedown_document *doc)
 {
-	size_t i;
-
-	for (i = 0; i < (size_t)doc->work_bufs[BUFFER_SPAN].asize; ++i)
-		hoedown_buffer_free(doc->work_bufs[BUFFER_SPAN].item[i]);
-
-	for (i = 0; i < (size_t)doc->work_bufs[BUFFER_BLOCK].asize; ++i)
-		hoedown_buffer_free(doc->work_bufs[BUFFER_BLOCK].item[i]);
-
-	hoedown_stack_uninit(&doc->work_bufs[BUFFER_SPAN]);
-	hoedown_stack_uninit(&doc->work_bufs[BUFFER_BLOCK]);
-
 	free(doc);
 }
