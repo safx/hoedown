@@ -5,8 +5,6 @@
 #include <ctype.h>
 #include <stdio.h>
 
-#include "stack.h"
-
 #ifndef _MSC_VER
 #include <strings.h>
 #else

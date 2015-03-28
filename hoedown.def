@@ -31,10 +31,4 @@ EXPORTS
 	hoedown_html_renderer_new
 	hoedown_html_toc_renderer_new
 	hoedown_html_renderer_free
-	hoedown_stack_init
-	hoedown_stack_uninit
-	hoedown_stack_grow
-	hoedown_stack_push
-	hoedown_stack_pop
-	hoedown_stack_top
 	hoedown_version
