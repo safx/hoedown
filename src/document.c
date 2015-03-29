@@ -2427,16 +2427,16 @@ parse_block(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t size
 			(i = parse_table(ob, doc, txt_data, end)) != 0)
 			beg += i;
 
-		else if (prefix_quote(txt_data, end))
+		else if (prefix_quote(txt_data, end) && doc->md.blockquote)
 			beg += parse_blockquote(ob, doc, txt_data, end);
 
 		else if (!(doc->ext_flags & HOEDOWN_EXT_DISABLE_INDENTED_CODE) && prefix_code(txt_data, end))
 			beg += parse_blockcode(ob, doc, txt_data, end);
 
-		else if (prefix_uli(txt_data, end))
+		else if (prefix_uli(txt_data, end) && doc->md.list)
 			beg += parse_list(ob, doc, txt_data, end, 0);
 
-		else if (prefix_oli(txt_data, end))
+		else if (prefix_oli(txt_data, end) && doc->md.list)
 			beg += parse_list(ob, doc, txt_data, end, HOEDOWN_LIST_ORDERED);
 
 		else
