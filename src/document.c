@@ -1715,17 +1715,22 @@ parse_fencedcode(hoedown_object ob, hoedown_document *doc, uint8_t *data, size_t
 	/* search for end */
 	i++;
 	text_start = i;
+	int found = 0;
 	while ((line_start = i) < size) {
 		while (i < size && data[i] != '\n')
 			i++;
 
 		w2 = is_codefence(data + line_start, i - line_start, &width2, &chr2);
 		if (w == w2 && width == width2 && chr == chr2 &&
-		    is_empty(data + (line_start+w), i - (line_start+w)))
+			is_empty(data + (line_start+w), i - (line_start+w))) {
+			found = 1;
 			break;
+		}
 
 		i++;
 	}
+	if (!found)
+		return 0;
 
 	text.data = data + text_start;
 	text.size = line_start - text_start;
